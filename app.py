@@ -8,7 +8,7 @@ import time
 # CONFIGURACIÓN DE GEMINI
 # ============================================================
 genai.configure(api_key="AIzaSyCHXN3iQptZoYuc9jpKboQ1MepxZ_4RyBI")  
-modelo = genai.GenerativeModel("gemini-2.0-flash")
+modelo = genai.GenerativeModel("gemini-1.5-pro")
 
 # ============================================================
 # LECTORES DE PDF Y DOCX
