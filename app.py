@@ -96,8 +96,8 @@ def wrapper(prompt):
 
 profesor = Agent(
     role=f"Profesor de {area}",
-    goal="Crear preguntas difíciles basadas en los apuntes.",
-    backstory="Profesor de examen de grado UCH.",
+    goal="Formular preguntas muy difíciles usando solo los apuntes.",
+    backstory="Profesor de examen de grado de la U. de Chile.",
     llm=wrapper
 )
 
@@ -107,6 +107,7 @@ presidente = Agent(
     backstory="Miembro de comisión examen de grado UCH.",
     llm=wrapper
 )
+
 
 # ============================================================
 # GENERAR PREGUNTA
