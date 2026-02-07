@@ -1,66 +1,65 @@
-import os
 import streamlit as st
-import datetime
 import docx
 from PyPDF2 import PdfReader
-from crewai import Agent, Task, Crew
 import google.generativeai as genai
 
 # ============================================================
-# CONFIG API KEY
+# CONFIGURACIÓN DE GEMINI
 # ============================================================
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 genai.configure(api_key=GOOGLE_API_KEY)
 
-# MODELO GEMINI NATIVO (COMPATIBLE CON CREWAI)
-llm = genai.GenerativeModel("gemini-2.0-flash")
+modelo = genai.GenerativeModel("gemini-2.0-flash")
 
 # ============================================================
-# LECTURA PDF / DOCX
+# FUNCIONES PARA LEER PDF / DOCX
 # ============================================================
 def leer_pdf(file):
     try:
         reader = PdfReader(file)
         texto = ""
         for page in reader.pages:
-            texto += page.extract_text() + "\n"
+            extraido = page.extract_text()
+            if extraido:
+                texto += extraido + "\n"
         return texto
-    except:
+    except Exception:
         return ""
 
-def leer_docx(file):
+def leer_docx_file(file):
     try:
         doc = docx.Document(file)
         return "\n".join(p.text for p in doc.paragraphs)
-    except:
+    except Exception:
         return ""
 
 # ============================================================
-# PROCESAR ARCHIVOS
+# PROCESAMIENTO DE ARCHIVOS SUBIDOS
 # ============================================================
-def procesar_archivos(lista):
+def procesar_archivos(archivos):
     corpus = ""
-    for archivo in lista:
+    for archivo in archivos:
         nombre = archivo.name.lower()
 
         if nombre.endswith(".pdf"):
             corpus += leer_pdf(archivo)
 
         elif nombre.endswith(".docx"):
-            corpus += leer_docx(archivo)
+            corpus += leer_docx_file(archivo)
 
-    # Límite seguro para evitar fallos
-    return corpus[:10000]
+    # Límite seguro para Gemini
+    return corpus[:12000]
 
 # ============================================================
 # STREAMLIT UI
 # ============================================================
 st.title("🎓 Simulador Examen de Grado – Derecho U. de Chile")
+st.write("Simulador con generación de preguntas y evaluación automática usando Gemini.")
 
 st.sidebar.header("Carga tus apuntes")
 archivos = st.sidebar.file_uploader(
-    "Sube tus apuntes (PDF o DOCX):",
-    type=["pdf","docx"],
+    "Sube tus apuntes (PDF / DOCX)",
+    type=["pdf", "docx"],
     accept_multiple_files=True
 )
 
@@ -70,7 +69,7 @@ if st.sidebar.button("Procesar apuntes"):
         st.stop()
 
     st.session_state["corpus"] = procesar_archivos(archivos)
-    st.success("📘 Apuntes cargados.")
+    st.success("📘 Apuntes cargados correctamente.")
 
 if "corpus" not in st.session_state:
     st.warning("Sube apuntes para continuar.")
@@ -79,62 +78,36 @@ if "corpus" not in st.session_state:
 corpus = st.session_state["corpus"]
 
 # ============================================================
-# ÁREA
+# SELECCIÓN DE ÁREA
 # ============================================================
 area = st.selectbox(
     "Selecciona un área:",
-    ["Derecho Constitucional","Derecho Civil","Derecho Procesal Civil"]
+    ["Derecho Constitucional", "Derecho Civil", "Derecho Procesal Civil"]
 )
 
 # ============================================================
-# AGENTES
-# ============================================================
-def wrapper(prompt):
-    """Convierte Gemini nativo en interfaz simple para CrewAI."""
-    respuesta = llm.generate_content(prompt)
-    return respuesta.text
-
-profesor = Agent(
-    role=f"Profesor de {area}",
-    goal="Formular preguntas muy difíciles usando solo los apuntes.",
-    backstory="Profesor de examen de grado de la U. de Chile.",
-    llm=wrapper
-)
-
-presidente = Agent(
-    role="Presidente de Comisión",
-    goal="Evaluar la respuesta del alumno con nota y análisis crítico.",
-    backstory="Miembro de comisión examen de grado UCH.",
-    llm=wrapper
-)
-
-
-# ============================================================
-# GENERAR PREGUNTA
+# GENERAR PREGUNTA CON GEMINI
 # ============================================================
 if st.button("Generar pregunta"):
-    tarea = Task(
-        description=f"""
-        Usa este material:
+    prompt = f"""
+    Eres un profesor de examen de grado de la Universidad de Chile.
+    Usa EXCLUSIVAMENTE este corpus de apuntes (no inventes nada externo):
 
-        {corpus}
+    --- APUNTES ---
+    {corpus}
+    ----------------
 
-        Genera una pregunta:
-        - Área: {area}
-        - Muy difícil
-        - Breve
-        - Basada exclusivamente en los apuntes
-        """,
-        expected_output="Una pregunta de examen.",
-        agent=profesor
-    )
+    Genera UNA sola pregunta de examen:
 
-    pregunta = Crew(
-        agents=[profesor],
-        tasks=[tarea]
-    ).kickoff()
+    - Área: {area}
+    - Muy difícil
+    - Breve pero exigente
+    - 100% basada en los apuntes
+    """
 
-    st.session_state["pregunta"] = pregunta
+    respuesta = modelo.generate_content(prompt)
+    st.session_state["pregunta"] = respuesta.text
+
     st.success("Pregunta generada.")
 
 # Mostrar pregunta
@@ -143,47 +116,50 @@ if "pregunta" in st.session_state:
     st.write(st.session_state["pregunta"])
 
 # ============================================================
-# RESPUESTA DEL ALUMNO
+# RESPUESTA DEL ESTUDIANTE
 # ============================================================
-respuesta = st.text_area("✍️ Escribe tu respuesta:")
+respuesta_alumno = st.text_area("✍️ Escribe tu respuesta:", height=250)
 
 # ============================================================
-# EVALUAR
+# EVALUACIÓN CON GEMINI
 # ============================================================
 if st.button("Evaluar respuesta"):
-    if respuesta.strip() == "":
-        st.error("Debes escribir algo.")
+    if respuesta_alumno.strip() == "":
+        st.error("Debes escribir una respuesta.")
         st.stop()
 
-    tarea_eval = Task(
-        description=f"""
-        Evalúa examen U. Chile:
+    prompt_eval = f"""
+    Eres un PRESIDENTE DE COMISIÓN DE EXAMEN DE GRADO de la U. de Chile.
 
-        Pregunta:
-        {st.session_state["pregunta"]}
+    Evalúa la siguiente respuesta basándote SOLO en los apuntes entregados.
+    NO inventes doctrina o artículos que no estén en los apuntes.
 
-        Respuesta del alumno:
-        {respuesta}
+    --- PREGUNTA ---
+    {st.session_state["pregunta"]}
 
-        Basado únicamente en:
-        {corpus}
+    --- RESPUESTA DEL ALUMNO ---
+    {respuesta_alumno}
 
-        Entrega:
-        - Nota de 1.0 a 7.0
-        - Análisis crítico
-        - Respuesta correcta con doctrina y artículos
-        """,
-        expected_output="Evaluación completa.",
-        agent=presidente
-    )
+    --- APUNTES ---
+    {corpus}
+    ----------------
 
-    evaluacion = Crew(
-        agents=[presidente],
-        tasks=[tarea_eval]
-    ).kickoff()
+    Debes entregar:
+
+    1) Una NOTA del 1.0 al 7.0, estrictamente siguiendo el estándar del examen de grado.
+    2) Un análisis crítico detallado, señalando aciertos, omisiones y errores.
+    3) La respuesta correcta, basada SOLO en el corpus.
+
+    Entrega en formato:
+
+    **Nota:** X.X  
+    **Análisis:** ...  
+    **Respuesta correcta:** ...
+    """
+
+    evaluacion = modelo.generate_content(prompt_eval)
 
     st.subheader("📄 Evaluación")
-    st.write(evaluacion)
+    st.write(evaluacion.text)
 
-    st.success("Evaluación generada.")
-    
+    st.success("Evaluación generada exitosamente.")
