@@ -1,0 +1,6 @@
+streamlit
+python-docx
+PyPDF2
+crewai
+langchain-google-genai
+google-generativeai
