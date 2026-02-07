@@ -1,5 +1,5 @@
-import streamlit as st
 import os
+import streamlit as st
 import datetime
 import docx
 from PyPDF2 import PdfReader
@@ -7,7 +7,7 @@ from crewai import Agent, Task, Crew
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # ============================================================
-# CONFIGURACIÓN API KEY (desde Streamlit Secrets)
+# CONFIGURACIÓN API KEY (Streamlit Secrets)
 # ============================================================
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 
@@ -19,40 +19,38 @@ llm = ChatGoogleGenerativeAI(
 )
 
 # ============================================================
-# RUTA DE GOOGLE DRIVE (tu carpeta de apuntes)
-# ============================================================
-RUTA_APUNTES = "/content/drive/MyDrive/ApuntesWikiBello"
-
-# ============================================================
 # FUNCIONES PARA LEER PDF Y DOCX
 # ============================================================
-def leer_pdf(path):
+def leer_pdf(file):
     try:
-        reader = PdfReader(path)
+        reader = PdfReader(file)
         texto = ""
         for page in reader.pages:
             texto += page.extract_text() + "\n"
         return texto
-    except Exception as e:
+    except:
         return ""
 
-def leer_docx(path):
+def leer_docx(file):
     try:
-        doc = docx.Document(path)
+        doc = docx.Document(file)
         return "\n".join(p.text for p in doc.paragraphs)
-    except Exception as e:
+    except:
         return ""
 
-def cargar_apuntes():
+# ============================================================
+# LECTURA DE ARCHIVOS SUBIDOS POR EL USUARIO
+# ============================================================
+def procesar_archivos(lista_archivos):
     corpus = ""
-    for archivo in os.listdir(RUTA_APUNTES):
-        path = os.path.join(RUTA_APUNTES, archivo)
+    for archivo in lista_archivos:
+        nombre = archivo.name.lower()
 
-        if archivo.lower().endswith(".pdf"):
-            corpus += leer_pdf(path) + "\n"
+        if nombre.endswith(".pdf"):
+            corpus += leer_pdf(archivo) + "\n"
 
-        elif archivo.lower().endswith(".docx"):
-            corpus += leer_docx(path) + "\n"
+        elif nombre.endswith(".docx"):
+            corpus += leer_docx(archivo) + "\n"
 
     return corpus[:20000]  # límite para el modelo
 
@@ -60,20 +58,31 @@ def cargar_apuntes():
 # INTERFAZ STREAMLIT
 # ============================================================
 st.title("🎓 Simulador Examen de Grado – Derecho U. de Chile")
-st.write("Simulador completo con generación de preguntas y evaluación automática.")
+st.write("Simulador con generación de preguntas y evaluación automática.")
 
 st.sidebar.header("Configuración")
-st.sidebar.write("Carga tus apuntes de Drive antes de comenzar.")
+st.sidebar.write("Sube tus apuntes para comenzar:")
 
 # ============================================================
-# BOTÓN PARA CARGAR APUNTES
+# SUBIR ARCHIVOS
 # ============================================================
-if st.sidebar.button("Cargar apuntes desde Drive"):
-    st.session_state["corpus"] = cargar_apuntes()
-    st.success("📘 Apuntes cargados desde tu Google Drive.")
+archivos = st.sidebar.file_uploader(
+    "Selecciona tus apuntes (PDF o DOCX):",
+    type=["pdf", "docx"],
+    accept_multiple_files=True
+)
 
+if st.sidebar.button("Procesar apuntes"):
+    if not archivos:
+        st.error("Debes subir al menos un archivo.")
+        st.stop()
+
+    st.session_state["corpus"] = procesar_archivos(archivos)
+    st.success("📘 Apuntes procesados correctamente.")
+
+# avisar si falta corpus
 if "corpus" not in st.session_state:
-    st.warning("⚠️ Carga tus apuntes desde el panel lateral para comenzar.")
+    st.warning("⚠️ Sube tus apuntes desde el panel lateral para comenzar.")
     st.stop()
 
 corpus = st.session_state["corpus"]
@@ -107,7 +116,7 @@ presidente = Agent(
 # GENERACIÓN DE PREGUNTA
 # ============================================================
 if st.button("Generar pregunta"):
-    tarea_pregunta = Task(
+    tarea = Task(
         description=f"""
         Usa exclusivamente este material:
 
@@ -115,7 +124,7 @@ if st.button("Generar pregunta"):
 
         Genera una pregunta de examen de grado:
 
-        - Del área: {area}
+        - Área: {area}
         - Muy difícil
         - Breve
         - Basada SOLO en los apuntes
@@ -126,12 +135,13 @@ if st.button("Generar pregunta"):
 
     pregunta = Crew(
         agents=[profesor],
-        tasks=[tarea_pregunta]
+        tasks=[tarea]
     ).kickoff()
 
     st.session_state["pregunta"] = pregunta
     st.success("Pregunta generada.")
 
+# mostrar pregunta
 if "pregunta" in st.session_state:
     st.subheader("🛑 Pregunta de examen")
     st.write(st.session_state["pregunta"])
@@ -165,7 +175,7 @@ if st.button("Evaluar respuesta"):
 
         Entrega:
         1) Nota (1.0 a 7.0)
-        2) Análisis crítico detallado
+        2) Análisis crítico
         3) Respuesta correcta con doctrina y artículos
         """,
         expected_output="Evaluación completa.",
@@ -180,19 +190,5 @@ if st.button("Evaluar respuesta"):
     st.subheader("📄 Evaluación del examen")
     st.write(resultado)
 
-    # ========================================================
-    # GUARDAR BITÁCORA EN DRIVE
-    # ========================================================
-    ruta_bitacora = "/content/drive/MyDrive/Bitacora_Examenes_Derecho.txt"
-    fecha = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-
-    with open(ruta_bitacora, "a", encoding="utf-8") as f:
-        f.write("\n" + "="*40 + "\n")
-        f.write(f"📅 FECHA: {fecha}\n")
-        f.write(f"📘 ÁREA: {area}\n")
-        f.write(f"❓ PREGUNTA: {st.session_state['pregunta']}\n")
-        f.write(f"🗣️ RESPUESTA: {respuesta}\n")
-        f.write(f"👨‍⚖️ EVALUACIÓN: {resultado}\n")
-        f.write("="*40 + "\n")
-
-    st.success("📝 Bitácora guardada en tu Google Drive.")
+    st.success("Evaluación generada exitosamente.")
+    
