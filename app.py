@@ -7,12 +7,12 @@ from crewai import Agent, Task, Crew
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # ============================================================
-# CONFIGURACIÓN API KEY (Streamlit Secrets)
+# CONFIGURACIÓN API KEY
 # ============================================================
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash",,
+    model="gemini-2.0-flash",   # MODELO ACTUALIZADO
     temperature=0.4,
     google_api_key=GOOGLE_API_KEY,
     verbose=True
@@ -39,7 +39,7 @@ def leer_docx(file):
         return ""
 
 # ============================================================
-# LECTURA DE ARCHIVOS SUBIDOS POR EL USUARIO
+# PROCESAR ARCHIVOS SUBIDOS
 # ============================================================
 def procesar_archivos(lista_archivos):
     corpus = ""
@@ -52,7 +52,9 @@ def procesar_archivos(lista_archivos):
         elif nombre.endswith(".docx"):
             corpus += leer_docx(archivo) + "\n"
 
-    return corpus[:30000]  # límite para el modelo
+    # LÍMITE ESTABLE PARA GEMINI + CREWAI
+    return corpus[:12000]
+
 
 # ============================================================
 # INTERFAZ STREAMLIT
@@ -80,7 +82,7 @@ if st.sidebar.button("Procesar apuntes"):
     st.session_state["corpus"] = procesar_archivos(archivos)
     st.success("📘 Apuntes procesados correctamente.")
 
-# avisar si falta corpus
+# Aviso si no hay corpus aún
 if "corpus" not in st.session_state:
     st.warning("⚠️ Sube tus apuntes desde el panel lateral para comenzar.")
     st.stop()
@@ -88,7 +90,7 @@ if "corpus" not in st.session_state:
 corpus = st.session_state["corpus"]
 
 # ============================================================
-# SELECCIÓN DEL ÁREA DE EXAMEN
+# SELECCIÓN DEL ÁREA
 # ============================================================
 area = st.selectbox(
     "Selecciona un área de examen:",
@@ -100,8 +102,8 @@ area = st.selectbox(
 # ============================================================
 profesor = Agent(
     role=f"Profesor de {area}",
-    goal="Formular preguntas extremadamente difíciles usando solo los apuntes.",
-    backstory="Profesor de examen de grado de la Universidad de Chile.",
+    goal="Formular preguntas muy difíciles usando solo los apuntes.",
+    backstory="Profesor de examen de grado de la U. de Chile.",
     llm=llm
 )
 
@@ -113,7 +115,7 @@ presidente = Agent(
 )
 
 # ============================================================
-# GENERACIÓN DE PREGUNTA
+# GENERAR PREGUNTA
 # ============================================================
 if st.button("Generar pregunta"):
     tarea = Task(
@@ -122,12 +124,12 @@ if st.button("Generar pregunta"):
 
         {corpus}
 
-        Genera una pregunta de examen de grado:
+        Ahora genera una pregunta de examen de grado:
 
-        - Área: {area}
-        - Muy difícil
-        - Breve
-        - Basada SOLO en los apuntes
+        • Área: {area}
+        • Nivel: Muy difícil
+        • Breve pero exigente
+        • Basada únicamente en los apuntes
         """,
         expected_output="Una pregunta de examen.",
         agent=profesor
@@ -139,9 +141,9 @@ if st.button("Generar pregunta"):
     ).kickoff()
 
     st.session_state["pregunta"] = pregunta
-    st.success("Pregunta generada.")
+    st.success("Pregunta generada correctamente.")
 
-# mostrar pregunta
+# Mostrar pregunta si existe
 if "pregunta" in st.session_state:
     st.subheader("🛑 Pregunta de examen")
     st.write(st.session_state["pregunta"])
@@ -166,16 +168,16 @@ if st.button("Evaluar respuesta"):
         PREGUNTA:
         {st.session_state["pregunta"]}
 
-        RESPUESTA:
+        RESPUESTA DEL ALUMNO:
         {respuesta}
 
         Usa SOLO los apuntes:
 
         {corpus}
 
-        Entrega:
-        1) Nota (1.0 a 7.0)
-        2) Análisis crítico
+        Entrega obligatoria:
+        1) Nota del 1.0 al 7.0
+        2) Análisis crítico exhaustivo
         3) Respuesta correcta con doctrina y artículos
         """,
         expected_output="Evaluación completa.",
@@ -190,5 +192,5 @@ if st.button("Evaluar respuesta"):
     st.subheader("📄 Evaluación del examen")
     st.write(resultado)
 
-    st.success("Evaluación generada exitosamente.")
+    st.success("Evaluación generada con éxito.")
     
