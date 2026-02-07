@@ -7,11 +7,11 @@ import time
 # ============================================================
 # CONFIGURACIÓN DE GEMINI
 # ============================================================
-genai.configure(api_key="AIzaSyCHXN3iQptZoYuc9jpKboQ1MepxZ_4RyBI")  
-modelo = genai.GenerativeModel("models/gemini-1.5-flash")
+genai.configure(api_key="AIzaSyCHXN3iQptZoYuc9jpKboQ1MepxZ_4RyBI")   # <-- REEMPLAZAR
+modelo = genai.GenerativeModel("gemini-pro")  # MODELO SEGURO PARA STREAMLIT CLOUD
 
 # ============================================================
-# LECTORES DE PDF Y DOCX
+# LECTORES PDF / DOCX
 # ============================================================
 def leer_pdf(file):
     try:
@@ -33,7 +33,7 @@ def leer_docx(file):
         return ""
 
 # ============================================================
-# PROCESAR ARCHIVOS
+# PROCESAR ARCHIVOS SUBIDOS
 # ============================================================
 def procesar_archivos(lista):
     corpus = ""
@@ -46,38 +46,37 @@ def procesar_archivos(lista):
     return corpus
 
 # ============================================================
-# RESUMEN SEGURO – ANTI RESOURCE EXHAUSTED
+# RESUMIR CHUNK – SEGURO
 # ============================================================
-
 def resumir_chunk(chunk, idx):
     prompt = f"""
-    Resume este fragmento en un máximo de 250 palabras.
+    Resume este fragmento jurídico en un máximo de 150 palabras.
     NO inventes nada.
 
     --- Fragmento {idx} ---
     {chunk}
-    ------------------------
     """
 
     for intento in range(3):
         try:
             r = modelo.generate_content(
                 prompt,
-                generation_config={"max_output_tokens": 512}
+                generation_config={"max_output_tokens": 350}
             )
             return r.text
-        except:
+        except Exception:
             time.sleep(1.5 * (intento + 1))
 
     return ""
 
-
+# ============================================================
+# REDUCIR CORPUS COMPLETO – META RESUMEN
+# ============================================================
 def reducir_corpus(corpus):
-    # Corpus pequeño → no resumir
     if len(corpus) < 8000:
         return corpus
 
-    CHUNK = 5000  # chunks seguros
+    CHUNK = 3500  # chunk pequeño para gemini-pro
     chunks = [corpus[i:i+CHUNK] for i in range(0, len(corpus), CHUNK)]
 
     resúmenes = []
@@ -87,35 +86,33 @@ def reducir_corpus(corpus):
         if r:
             resúmenes.append(r)
 
-        # límite de seguridad para no explotar el modelo
-        if len(resúmenes) >= 12:
+        if len(resúmenes) >= 15:  # seguridad
             break
 
     texto_compacto = "\n".join(resúmenes)
 
     prompt_final = f"""
     A partir de estos resúmenes parciales,
-    genera un meta-resumen académico en menos de 500 palabras.
+    genera un META-RESUMEN académico (máximo 350 palabras).
     NO inventes nada.
-
+    
     {texto_compacto}
     """
 
     meta = modelo.generate_content(
         prompt_final,
-        generation_config={"max_output_tokens": 800}
+        generation_config={"max_output_tokens": 550}
     ).text
 
     return meta
 
 # ============================================================
-# INTERFAZ
+# INTERFAZ DE USUARIO
 # ============================================================
 st.title("🎓 Simulador Examen de Grado – Derecho U. de Chile")
-st.write("Compatible con apuntes grandes (120+ páginas).")
+st.write("Compatible con apuntes extensos (100+ páginas).")
 
-# Carga de archivos
-st.sidebar.header("Carga de apuntes (PDF o DOCX)")
+st.sidebar.header("Cargar apuntes (PDF o DOCX)")
 archivos = st.sidebar.file_uploader(
     "Selecciona tus archivos:",
     type=["pdf", "docx"],
@@ -131,10 +128,10 @@ if st.sidebar.button("Procesar apuntes"):
     corpus = reducir_corpus(texto)
 
     st.session_state["corpus"] = corpus
-    st.success("📘 Apuntes cargados y compactados correctamente.")
+    st.success("📘 Apuntes cargados, resumidos y compactados correctamente.")
 
 if "corpus" not in st.session_state:
-    st.warning("Sube apuntes para comenzar.")
+    st.warning("Sube tus apuntes para comenzar.")
     st.stop()
 
 corpus = st.session_state["corpus"]
@@ -143,7 +140,7 @@ corpus = st.session_state["corpus"]
 # SELECCIÓN DE ÁREA
 # ============================================================
 area = st.selectbox(
-    "Selecciona área:",
+    "Selecciona el área:",
     ["Derecho Constitucional", "Derecho Civil", "Derecho Procesal Civil"]
 )
 
@@ -152,33 +149,32 @@ area = st.selectbox(
 # ============================================================
 if st.button("Generar pregunta"):
     prompt = f"""
-    Genera una pregunta de examen de grado (muy difícil)
-    basada SOLO en este meta-resumen compacto:
+    Genera una pregunta de examen de grado (MUY difícil),
+    basada exclusivamente en este meta-resumen:
 
     {corpus}
 
     Área: {area}
 
-    Debe ser una pregunta dura, conceptual y doctrinal.
+    Debe ser conceptual, doctrinal y típica de examen de profesor.
     """
 
     r = modelo.generate_content(
         prompt,
-        generation_config={"max_output_tokens": 500}
+        generation_config={"max_output_tokens": 450}
     ).text
 
     st.session_state["pregunta"] = r
     st.success("Pregunta generada.")
 
-# Mostrar pregunta
 if "pregunta" in st.session_state:
-    st.subheader("❓ Pregunta de examen")
+    st.subheader("❓ Pregunta del examen")
     st.write(st.session_state["pregunta"])
 
 # ============================================================
 # RESPUESTA DEL ALUMNO
 # ============================================================
-respuesta = st.text_area("✍ Tu respuesta:")
+respuesta = st.text_area("✍ Escribe tu respuesta:")
 
 # ============================================================
 # EVALUACIÓN
@@ -189,21 +185,21 @@ if st.button("Evaluar respuesta"):
         st.stop()
 
     prompt_eval = f"""
-    Evalúa la respuesta según estándar de examen de grado U. de Chile.
-    Usa exclusivamente este meta-resumen reducido:
+    Evalúa la respuesta con estándar de Examen de Grado U. de Chile.
+    Usa exclusivamente este meta-resumen:
 
     {corpus}
 
-    --- PREGUNTA ---
+    --- Pregunta ---
     {st.session_state["pregunta"]}
 
-    --- RESPUESTA DEL ALUMNO ---
+    --- Respuesta del alumno ---
     {respuesta}
 
     Entrega:
     - Nota (1.0 a 7.0)
-    - Análisis crítico detallado
-    - Respuesta correcta basada solo en el meta-resumen
+    - Análisis crítico
+    - Respuesta correcta basada SOLO en el meta-resumen
     """
 
     e = modelo.generate_content(
@@ -213,4 +209,4 @@ if st.button("Evaluar respuesta"):
 
     st.subheader("📄 Evaluación")
     st.write(e)
-    st.success("Evaluación generada.")
+    st.success("Evaluación generada correctamente.")
